@@ -4,3 +4,4 @@ secret.json
 credentials.json
 venv
 appPassword.txt
+smtp_config.json
