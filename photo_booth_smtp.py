@@ -15,12 +15,14 @@ from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
 import json
+from PIL import Image, ImageTk
 
 class PhotoBoothApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Photo Booth Email System (SMTP)")
-        self.root.geometry("500x500")
+        self.root.geometry("800x700")
+        self.root.configure(bg="#f0f0f0")
         
         self.watch_directory = None
         self.zip_output_directory = None
@@ -38,128 +40,176 @@ class PhotoBoothApp:
         self.smtp_server = "smtp.gmail.com"
         self.smtp_port = 587
         
-        self.setup_ui()
+        # Photo preview
+        self.photo_labels = []
+        
         self.load_smtp_config()
+        self.setup_ui()
         
     def setup_ui(self):
-        # SMTP Configuration Section
-        tk.Label(self.root, text="SMTP Email Configuration", font=("Arial", 14, "bold")).pack(pady=10)
+        # Header
+        header_frame = tk.Frame(self.root, bg="#4CAF50", height=80)
+        header_frame.pack(fill=tk.X)
+        header_frame.pack_propagate(False)
         
-        smtp_frame = tk.Frame(self.root)
-        smtp_frame.pack(pady=5)
+        tk.Label(header_frame, text="📸 Photo Booth", font=("Arial", 24, "bold"), 
+                bg="#4CAF50", fg="white").pack(pady=20)
         
-        tk.Label(smtp_frame, text="Gmail Address:", font=("Arial", 10)).grid(row=0, column=0, sticky='e', padx=5)
-        self.smtp_email_entry = tk.Entry(smtp_frame, width=30, font=("Arial", 10))
-        self.smtp_email_entry.grid(row=0, column=1, padx=5)
+        # Main content frame
+        content_frame = tk.Frame(self.root, bg="#f0f0f0")
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        tk.Label(smtp_frame, text="App Password:", font=("Arial", 10)).grid(row=1, column=0, sticky='e', padx=5)
-        self.smtp_password_entry = tk.Entry(smtp_frame, width=30, font=("Arial", 10), show="*")
-        self.smtp_password_entry.grid(row=1, column=1, padx=5)
+        # Configuration Section
+        config_section = tk.LabelFrame(content_frame, text="Setup", font=("Arial", 12, "bold"),
+                                       bg="#f0f0f0", padx=10, pady=10)
+        config_section.pack(fill=tk.X, pady=(0, 15))
         
-        tk.Button(smtp_frame, text="Save SMTP Config", command=self.save_smtp_config,
-                 bg="#2196F3", fg="white", font=("Arial", 10)).grid(row=2, column=0, columnspan=2, pady=5)
+        # Directory selections in a grid
+        tk.Label(config_section, text="Monitor Directory:", font=("Arial", 10), 
+                bg="#f0f0f0", anchor='w').grid(row=0, column=0, sticky='w', pady=5)
         
-        tk.Label(self.root, text="─" * 50, font=("Arial", 8)).pack(pady=5)
+        dir_frame = tk.Frame(config_section, bg="#f0f0f0")
+        dir_frame.grid(row=0, column=1, sticky='ew', pady=5)
+        config_section.columnconfigure(1, weight=1)
         
-        # Directory selection
-        tk.Label(self.root, text="Select Directory to Monitor:", font=("Arial", 12)).pack(pady=10)
+        self.dir_label = tk.Label(dir_frame, text="Not selected", fg="gray", 
+                                 bg="#f0f0f0", anchor='w')
+        self.dir_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        dir_frame = tk.Frame(self.root)
-        dir_frame.pack(pady=5)
+        tk.Button(dir_frame, text="Browse", command=self.select_directory,
+                 bg="#2196F3", fg="white", font=("Arial", 9)).pack(side=tk.RIGHT)
         
-        self.dir_label = tk.Label(dir_frame, text="No directory selected", fg="gray")
-        self.dir_label.pack(side=tk.LEFT, padx=5)
+        tk.Label(config_section, text="Zip Output:", font=("Arial", 10), 
+                bg="#f0f0f0", anchor='w').grid(row=1, column=0, sticky='w', pady=5)
         
-        tk.Button(dir_frame, text="Browse", command=self.select_directory).pack(side=tk.LEFT)
+        zip_frame = tk.Frame(config_section, bg="#f0f0f0")
+        zip_frame.grid(row=1, column=1, sticky='ew', pady=5)
         
-        # Zip output directory selection
-        tk.Label(self.root, text="Select Folder for Zip Files:", font=("Arial", 12)).pack(pady=10)
+        self.zip_label = tk.Label(zip_frame, text="Not selected", fg="gray", 
+                                 bg="#f0f0f0", anchor='w')
+        self.zip_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        zip_frame = tk.Frame(self.root)
-        zip_frame.pack(pady=5)
+        tk.Button(zip_frame, text="Browse", command=self.select_zip_directory,
+                 bg="#2196F3", fg="white", font=("Arial", 9)).pack(side=tk.RIGHT)
         
-        self.zip_label = tk.Label(zip_frame, text="No directory selected", fg="gray")
-        self.zip_label.pack(side=tk.LEFT, padx=5)
+        tk.Label(config_section, text="Archive Folder:", font=("Arial", 10), 
+                bg="#f0f0f0", anchor='w').grid(row=2, column=0, sticky='w', pady=5)
         
-        tk.Button(zip_frame, text="Browse", command=self.select_zip_directory).pack(side=tk.LEFT)
+        archive_frame = tk.Frame(config_section, bg="#f0f0f0")
+        archive_frame.grid(row=2, column=1, sticky='ew', pady=5)
         
-        # Archive directory selection (for failed sends)
-        tk.Label(self.root, text="Select Archive Folder (for unsent photos):", font=("Arial", 12)).pack(pady=10)
+        self.archive_label = tk.Label(archive_frame, text="Not selected", fg="gray", 
+                                      bg="#f0f0f0", anchor='w')
+        self.archive_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        archive_frame = tk.Frame(self.root)
-        archive_frame.pack(pady=5)
+        tk.Button(archive_frame, text="Browse", command=self.select_archive_directory,
+                 bg="#2196F3", fg="white", font=("Arial", 9)).pack(side=tk.RIGHT)
         
-        self.archive_label = tk.Label(archive_frame, text="No directory selected", fg="gray")
-        self.archive_label.pack(side=tk.LEFT, padx=5)
+        # Recipient Email Section
+        email_section = tk.LabelFrame(content_frame, text="Recipient Email", 
+                                     font=("Arial", 12, "bold"),
+                                     bg="#f0f0f0", padx=10, pady=10)
+        email_section.pack(fill=tk.X, pady=(0, 15))
         
-        tk.Button(archive_frame, text="Browse", command=self.select_archive_directory).pack(side=tk.LEFT)
+        email_input_frame = tk.Frame(email_section, bg="#f0f0f0")
+        email_input_frame.pack(fill=tk.X)
         
-        # Email input
-        tk.Label(self.root, text="Enter Recipient Email Address:", font=("Arial", 12)).pack(pady=10)
-        
-        self.email_entry = tk.Entry(self.root, width=40, font=("Arial", 12))
-        self.email_entry.pack(pady=5)
+        self.email_entry = tk.Entry(email_input_frame, width=40, font=("Arial", 14),
+                                    relief=tk.SOLID, borderwidth=1)
+        self.email_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         self.email_entry.bind('<Return>', lambda e: self.update_email())
         
-        tk.Button(self.root, text="Update Email", command=self.update_email, 
-                 bg="#4CAF50", fg="white", font=("Arial", 11)).pack(pady=10)
+        tk.Button(email_input_frame, text="Update Email", command=self.update_email, 
+                 bg="#4CAF50", fg="white", font=("Arial", 11, "bold"),
+                 padx=20).pack(side=tk.RIGHT)
         
-        # Status label
-        self.status_label = tk.Label(self.root, text="Status: Configure SMTP settings first...", 
-                                     font=("Arial", 10), fg="blue")
-        self.status_label.pack(pady=10)
+        # Photo Preview Section
+        preview_section = tk.LabelFrame(content_frame, text="Captured Photos", 
+                                       font=("Arial", 12, "bold"),
+                                       bg="#f0f0f0", padx=10, pady=10)
+        preview_section.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # Scrollable frame for photos
+        preview_canvas = tk.Canvas(preview_section, bg="white", height=200,
+                                   highlightthickness=0)
+        preview_scrollbar = tk.Scrollbar(preview_section, orient="horizontal", 
+                                        command=preview_canvas.xview)
+        self.preview_frame = tk.Frame(preview_canvas, bg="white")
+        
+        self.preview_frame.bind(
+            "<Configure>",
+            lambda e: preview_canvas.configure(scrollregion=preview_canvas.bbox("all"))
+        )
+        
+        preview_canvas.create_window((0, 0), window=self.preview_frame, anchor="nw")
+        preview_canvas.configure(xscrollcommand=preview_scrollbar.set)
+        
+        preview_canvas.pack(fill=tk.BOTH, expand=True)
+        preview_scrollbar.pack(fill=tk.X)
+        
+        # Status Section
+        status_frame = tk.Frame(content_frame, bg="#f0f0f0")
+        status_frame.pack(fill=tk.X)
+        
+        self.status_label = tk.Label(status_frame, text="Ready to start!", 
+                                     font=("Arial", 11), fg="#4CAF50", bg="#f0f0f0",
+                                     anchor='w', padx=10, pady=10,
+                                     relief=tk.SOLID, borderwidth=1)
+        self.status_label.pack(fill=tk.X)
+        
+        # Check SMTP config on startup
+        if not self.smtp_email or not self.smtp_password:
+            self.status_label.config(
+                text="⚠️ SMTP not configured! Edit smtp_config.json with your email and app password.",
+                fg="orange"
+            )
+            messagebox.showwarning(
+                "SMTP Configuration Required",
+                "SMTP credentials not found!\n\n"
+                "Please edit 'smtp_config.json' and add:\n"
+                "- Your Gmail address\n"
+                "- Your Gmail App Password (16 characters)\n\n"
+                "See SMTP_SETUP.md for instructions.\n\n"
+                "Then restart the application."
+            )
         
     def load_smtp_config(self):
         """Load SMTP configuration from file"""
-        if os.path.exists('smtp_config.json'):
+        # Create template config file if it doesn't exist
+        if not os.path.exists('smtp_config.json'):
+            template_config = {
+                "email": "your-email@gmail.com",
+                "password": "your-16-character-app-password",
+                "server": "smtp.gmail.com",
+                "port": 587,
+                "_comment": "Edit this file with your Gmail address and App Password. See SMTP_SETUP.md for instructions."
+            }
             try:
-                with open('smtp_config.json', 'r') as f:
-                    config = json.load(f)
-                    self.smtp_email = config.get('email')
-                    self.smtp_password = config.get('password')
-                    self.smtp_server = config.get('server', 'smtp.gmail.com')
-                    self.smtp_port = config.get('port', 587)
-                    
-                    if self.smtp_email:
-                        self.smtp_email_entry.insert(0, self.smtp_email)
-                    if self.smtp_password:
-                        self.smtp_password_entry.insert(0, self.smtp_password)
-                        
-                    self.status_label.config(text="SMTP config loaded. Ready to start!", fg="green")
+                with open('smtp_config.json', 'w') as f:
+                    json.dump(template_config, f, indent=2)
+                print("Created smtp_config.json template - please edit with your credentials")
             except Exception as e:
-                print(f"Error loading SMTP config: {e}")
-    
-    def save_smtp_config(self):
-        """Save SMTP configuration to file"""
-        email = self.smtp_email_entry.get().strip()
-        password = self.smtp_password_entry.get().strip()
-        
-        if not email or not password:
-            messagebox.showwarning("Warning", "Please enter both email and password")
+                print(f"Error creating smtp_config.json template: {e}")
             return
         
-        if '@' not in email:
-            messagebox.showwarning("Warning", "Please enter a valid email address")
-            return
-        
-        self.smtp_email = email
-        self.smtp_password = password
-        
-        config = {
-            'email': self.smtp_email,
-            'password': self.smtp_password,
-            'server': self.smtp_server,
-            'port': self.smtp_port
-        }
-        
+        # Load existing config
         try:
-            with open('smtp_config.json', 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            messagebox.showinfo("Success", "SMTP configuration saved!")
-            self.status_label.config(text="SMTP configured. Select directories and enter recipient email.", fg="green")
+            with open('smtp_config.json', 'r') as f:
+                config = json.load(f)
+                self.smtp_email = config.get('email')
+                self.smtp_password = config.get('password')
+                self.smtp_server = config.get('server', 'smtp.gmail.com')
+                self.smtp_port = config.get('port', 587)
+                print(config)
+                
+                # Check if still using template values
+                if self.smtp_email == "your-email@gmail.com" or self.smtp_password == "your-16-character-app-password":
+                    print("smtp_config.json contains template values - please edit with real credentials")
+                    self.smtp_email = None
+                    self.smtp_password = None
+                
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save config: {str(e)}")
+            print(f"Error loading SMTP config: {e}")
     
     def select_directory(self):
         directory = filedialog.askdirectory(title="Select Directory to Monitor")
@@ -225,6 +275,45 @@ class PhotoBoothApp:
             self.status_label.config(text="Timer expired. Sending photos...")
             self.send_photos()
     
+    def update_photo_preview(self):
+        """Update the photo preview section with current photos"""
+        # Clear existing previews
+        for widget in self.preview_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.photo_files:
+            tk.Label(self.preview_frame, text="No photos yet - waiting for captures...", 
+                    font=("Arial", 11), fg="gray", bg="white",
+                    padx=20, pady=20).pack()
+            return
+        
+        # Display each photo as a thumbnail
+        for i, photo_path in enumerate(self.photo_files):
+            try:
+                # Create a frame for each photo
+                photo_container = tk.Frame(self.preview_frame, bg="white", 
+                                          relief=tk.SOLID, borderwidth=1,
+                                          padx=5, pady=5)
+                photo_container.pack(side=tk.LEFT, padx=5, pady=5)
+                
+                # Load and resize image
+                img = Image.open(photo_path)
+                img.thumbnail((150, 150), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                
+                # Keep a reference to prevent garbage collection
+                label = tk.Label(photo_container, image=photo, bg="white")
+                label.image = photo  # Keep reference!
+                label.pack()
+                
+                # Add filename label
+                filename = os.path.basename(photo_path)
+                tk.Label(photo_container, text=filename, font=("Arial", 8),
+                        bg="white", fg="#666").pack()
+                
+            except Exception as e:
+                print(f"Error loading preview for {photo_path}: {e}")
+    
     def handle_new_photo(self, filepath):
         """Handle a new photo file"""
         if not self.current_email:
@@ -259,9 +348,12 @@ class PhotoBoothApp:
             os.rename(filepath, new_filepath)
             self.photo_files.append(new_filepath)
             self.status_label.config(
-                text=f"Captured photo {self.file_counter} for {self.current_email}", 
+                text=f"✓ Captured photo {self.file_counter} for {self.current_email}", 
                 fg="green"
             )
+            
+            # Update photo preview
+            self.update_photo_preview()
             
             # Reset the 20-second timer
             self.reset_timer()
@@ -336,6 +428,9 @@ class PhotoBoothApp:
             if self.timer:
                 self.timer.cancel()
                 self.timer = None
+            
+            # Clear photo preview
+            self.update_photo_preview()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to process photos: {str(e)}")
